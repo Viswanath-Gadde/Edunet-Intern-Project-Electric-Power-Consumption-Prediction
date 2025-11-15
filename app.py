@@ -4,8 +4,15 @@ import numpy as np
 import pandas as pd
 
 # Load model and scaler
-model = joblib.load("model.pkl")
-scaler = joblib.load("scaler.pkl")
+# NOTE: The scaler is StandardScaler, fitted ONLY on the 5 physical/weather features.
+# The model is MultiOutputRegressor(RandomForestRegressor).
+try:
+    model = joblib.load("model.pkl")
+    scaler = joblib.load("scaler.pkl")
+except FileNotFoundError:
+    st.error("Error: The 'model.pkl' or 'scaler.pkl' files were not found. Please ensure they are in the same directory.")
+    st.stop()
+
 
 st.title("🔌 Power Consumption Predictor")
 
@@ -14,12 +21,13 @@ st.write("Enter the raw input values below:")
 # ----------------------------
 # 1. RAW FEATURES FROM USER
 # ----------------------------
-dt = st.text_input("Datetime (YYYY-MM-DD HH:MM)")
-temperature = st.number_input("Temperature", value=0.0)
-humidity = st.number_input("Humidity", value=0.0)
-windspeed = st.number_input("WindSpeed", value=0.0)
-generaldiffuseflows = st.number_input("GeneralDiffuseFlows", value=0.0)
-diffuseflows = st.number_input("DiffuseFlows", value=0.0)
+# Use more descriptive labels and initial values from the dataset snippet
+dt = st.text_input("Datetime (YYYY-MM-DD HH:MM)", value="2017-01-01 00:00")
+temperature = st.number_input("Temperature (°C)", value=6.559, format="%.3f")
+humidity = st.number_input("Humidity (%)", value=73.8, format="%.3f")
+windspeed = st.number_input("WindSpeed (m/s)", value=0.083, format="%.3f")
+generaldiffuseflows = st.number_input("GeneralDiffuseFlows", value=0.051, format="%.3f")
+diffuseflows = st.number_input("DiffuseFlows", value=0.119, format="%.3f")
 
 if st.button("Predict"):
     try:
@@ -27,7 +35,7 @@ if st.button("Predict"):
         dt_parsed = pd.to_datetime(dt)
 
         # ----------------------------
-        # 2. CREATE 6 TEMPORAL FEATURES
+        # 2. CREATE 6 UNSCALED TEMPORAL FEATURES
         # ----------------------------
         month = dt_parsed.month
         day = dt_parsed.day
@@ -37,23 +45,44 @@ if st.button("Predict"):
         isweekend = 1 if dayofweek >= 5 else 0
 
         # ----------------------------
-        # 3. FINAL 11 FEATURES (IN ORDER)
+        # 3. APPLY SCALING CORRECTLY
         # ----------------------------
-        features = [
-            month, day, hour, minute, dayofweek, isweekend,
+
+        # Features to be scaled (5 features: Temp, Humidity, WindSpeed, GenDiff, Diff)
+        # These features must be in the order the scaler was fitted on.
+        weather_features_raw = np.array([
             temperature, humidity, windspeed,
             generaldiffuseflows, diffuseflows
-        ]
+        ]).reshape(1, -1)
+        
+        # Scale the weather features
+        weather_features_scaled = scaler.transform(weather_features_raw)
+        
+        # Temporal features (6 features, which are NOT scaled)
+        temporal_features = np.array([
+            month, day, hour, minute, dayofweek, isweekend
+        ]).reshape(1, -1)
 
-        X = np.array(features).reshape(1, -1)
+        # ----------------------------
+        # 4. COMBINE FINAL 11 FEATURES (IN ORDER)
+        # ----------------------------
+        # The final input for the model MUST match the training data structure:
+        # [5 Scaled Weather Features | 6 Unscaled Temporal Features]
+        X_final = np.hstack([weather_features_scaled, temporal_features])
 
-        # Scale
-        X_scaled = scaler.transform(X)
+        # Predict (The model expects 11 features in the correct order)
+        predictions = model.predict(X_final)[0]
+        
+        st.success("🔮 Prediction Complete!")
+        
+        # Display results
+        st.subheader("Predicted Power Consumption (kW)")
+        st.write(f"**Zone 1:** **{predictions[0]:,.2f}**")
+        st.write(f"**Zone 2:** {predictions[1]:,.2f}")
+        st.write(f"**Zone 3:** {predictions[2]:,.2f}")
 
-        # Predict
-        prediction = model.predict(X_scaled)[0]
 
-        st.success(f"🔮 Predicted Power Consumption: **{prediction}**")
-
+    except ValueError as ve:
+        st.error(f"Input Error: Please check your date format (YYYY-MM-DD HH:MM) or input values. Details: {str(ve)}")
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(f"An unexpected error occurred during prediction: {str(e)}")
