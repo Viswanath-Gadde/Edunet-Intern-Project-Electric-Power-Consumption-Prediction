@@ -76,10 +76,7 @@ This helped identify **seasonality, trends, and non-linear patterns**.
   - KNN  
   - Decision Tree  
   - Random Forest  
-  - Extra Trees  
-  - XGBoost  
-  - SVR  
-  - Gradient Boosting  
+  - XGBoost   
 - Used **MultiOutputRegressor** to predict all 3 zones simultaneously  
 - Evaluated using:  
   - **R² Score**  
